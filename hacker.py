@@ -45,12 +45,15 @@ class ClickerGUI:
         self.toggle_btn.grid(row=3, column=0, columnspan=2, sticky="ew")
 
     def run_click_sequence(self, target_x, target_y, clicks, delay):
-        """Executes clicks on an isolated thread to prevent mouse twitching/freezing."""
+        """Executes a perfectly stable click loop without fighting physical hand movements."""
         try:
+            # Snap once to ensure accuracy right where you clicked
+            self.mouse.position = (target_x, target_y)
+            
             for _ in range(clicks):
-                # Lock cursor position to where you originally clicked
-                self.mouse.position = (target_x, target_y)
-                self.mouse.click(Button.right, 1)
+                # Using explicit press and release sequences bypasses driver lag
+                self.mouse.press(Button.right)
+                self.mouse.release(Button.right)
                 time.sleep(delay)
         finally:
             self.is_clicking = False
@@ -58,13 +61,13 @@ class ClickerGUI:
     def on_click(self, x, y, button, pressed):
         if self.macro_running and pressed and button == Button.right:
             if self.is_clicking:
-                return  # Skip if a sequence is already executing
+                return  # Block recursive events
             
             self.is_clicking = True
             clicks = self.num_clicks_var.get()
             delay = self.delay_var.get()
 
-            # Start click chain in a new thread so the main listener loop never freezes
+            # Delegate tracking immediately to a background thread
             threading.Thread(
                 target=self.run_click_sequence, 
                 args=(x, y, clicks, delay), 
