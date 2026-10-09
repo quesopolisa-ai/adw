@@ -1,52 +1,94 @@
 import time
-import pyautogui
+import threading
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import ttk
+from pynput.mouse import Listener, Controller, Button
 
-def start_typing():
-    text = text_area.get("1.0", tk.END).strip()
-    if not text:
-        messagebox.showwarning("Warning", "Please paste or type some text first!")
-        return
+class ClickerGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Right-Click Macro")
+        self.root.geometry("300x200")
+        self.root.resizable(False, False)
+        
+        self.mouse = Controller()
+        self.is_clicking = False
+        self.macro_running = False
+        self.listener = None
 
-    delay = float(delay_entry.get())
-    wpm = float(wpm_entry.get())
-    
-    # Calculate delay per character based on WPM (assume ~5 characters per word)
-    chars_per_min = wpm * 5
-    interval = 60.0 / chars_per_min if chars_per_min > 0 else 0.05
+        # Customization Variables
+        self.num_clicks_var = tk.IntVar(value=3)
+        self.delay_var = tk.DoubleVar(value=0.05)
 
-    messagebox.showinfo("Ready", f"Click OK, then click inside your target document. Typing will start in {delay} seconds.")
-    time.sleep(delay)
+        self.setup_ui()
 
-    pyautogui.typewrite(text, interval=interval)
-    messagebox.println("Done", "Finished typing the text.")
+    def setup_ui(self):
+        # Main Layout Frame
+        frame = ttk.Frame(self.root, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
 
-# Build a simple GUI window
-root = tk.Tk()
-root.title("Auto-Typer Simulator")
-root.geometry("500x400")
+        # Number of Clicks
+        ttk.Label(frame, text="Number of Clicks:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.clicks_spinbox = ttk.Spinbox(frame, from_=1, to=100, textvariable=self.num_clicks_var, width=10)
+        self.clicks_spinbox.grid(row=0, column=1, pady=5, padx=10)
 
-label_instructions = tk.Label(root, text="Paste your text below:")
-label_instructions.pack(pady=5)
+        # Delay Input
+        ttk.Label(frame, text="Delay (Seconds):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.delay_spinbox = ttk.Spinbox(frame, from_=0.01, to=5.0, increment=0.01, textvariable=self.delay_var, width=10)
+        self.delay_spinbox.grid(row=1, column=1, pady=5, padx=10)
 
-text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=55, height=12)
-text_area.pack(pady=5)
+        # Status Label
+        self.status_label = ttk.Label(frame, text="Status: Stopped", foreground="red", font=("Helvetica", 10, "bold"))
+        self.status_label.grid(row=2, column=0, columnspan=2, pady=15)
 
-frame_settings = tk.Frame(root)
-frame_settings.pack(pady=10)
+        # Start / Stop Button
+        self.toggle_btn = ttk.Button(frame, text="Start Macro", command=self.toggle_macro)
+        self.toggle_btn.grid(row=3, column=0, columnspan=2, fill=tk.X)
 
-tk.Label(frame_settings, text="Start Delay (sec):").grid(row=0, column=0, padx=5)
-delay_entry = tk.Entry(frame_settings, width=8)
-delay_entry.insert(0, "5")
-delay_entry.grid(row=0, column=1, padx=5)
+    def on_click(self, x, y, button, pressed):
+        # Listen for physical right clicks only when macro is explicitly turned on
+        if self.macro_running and pressed and button == Button.right:
+            if self.is_clicking:
+                return
+            
+            self.is_clicking = True
+            
+            # Read variables safely from the UI configuration
+            clicks = self.num_clicks_var.get()
+            delay = self.delay_var.get()
 
-tk.Label(frame_settings, text="Speed (WPM):").grid(row=0, column=2, padx=5)
-wpm_entry = tk.Entry(frame_settings, width=8)
-wpm_entry.insert(0, "60")
-wpm_entry.grid(row=0, column=3, padx=5)
+            # Execute the rapid click chain
+            for _ in range(clicks):
+                self.mouse.click(Button.right, 1)
+                time.sleep(delay)
+                
+            self.is_clicking = False
 
-btn_start = tk.Button(root, text="Start Auto-Typing", command=start_typing, bg="green", fg="white", font=("Arial", 11, "bold"))
-btn_start.pack(pady=10)
+    def toggle_macro(self):
+        if not self.macro_running:
+            # Start the macro listener
+            self.macro_running = True
+            self.status_label.config(text="Status: Active & Listening", foreground="green")
+            self.toggle_btn.config(text="Stop Macro")
+            
+            # Run the listener in a separate thread to keep the GUI from freezing
+            self.listener = Listener(on_click=self.on_click)
+            self.listener.start()
+        else:
+            # Stop the macro listener
+            self.macro_running = False
+            self.status_label.config(text="Status: Stopped", foreground="red")
+            self.toggle_btn.config(text="Start Macro")
+            if self.listener:
+                self.listener.stop()
 
-root.mainloop()
+    def on_close(self):
+        if self.listener:
+            self.listener.stop()
+        self.root.destroy()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ClickerGUI(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    root.mainloop()
