@@ -1,8 +1,18 @@
 import time
 import threading
+import ctypes
 import tkinter as tk
 from tkinter import ttk
 from pynput.mouse import Listener, Controller, Button
+
+# FIX: Force Windows to use true screen pixels (fixes the teleporting bug)
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2) # Per-monitor DPI aware
+except:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware() # Fallback for older Windows
+    except:
+        pass # Ignore if not running on Windows
 
 class ClickerGUI:
     def __init__(self, root):
@@ -45,13 +55,11 @@ class ClickerGUI:
         self.toggle_btn.grid(row=3, column=0, columnspan=2, sticky="ew")
 
     def run_click_sequence(self, target_x, target_y, clicks, delay):
-        """Executes a perfectly stable click loop without fighting physical hand movements."""
+        """Clicks smoothly on true screen coordinates without jumping away."""
         try:
-            # Snap once to ensure accuracy right where you clicked
-            self.mouse.position = (target_x, target_y)
-            
             for _ in range(clicks):
-                # Using explicit press and release sequences bypasses driver lag
+                # Lock cursor onto the precise pixel you actually clicked
+                self.mouse.position = (target_x, target_y)
                 self.mouse.press(Button.right)
                 self.mouse.release(Button.right)
                 time.sleep(delay)
@@ -61,13 +69,13 @@ class ClickerGUI:
     def on_click(self, x, y, button, pressed):
         if self.macro_running and pressed and button == Button.right:
             if self.is_clicking:
-                return  # Block recursive events
+                return 
             
             self.is_clicking = True
             clicks = self.num_clicks_var.get()
             delay = self.delay_var.get()
 
-            # Delegate tracking immediately to a background thread
+            # Pass the true (unscaled) X and Y coordinates to the background thread
             threading.Thread(
                 target=self.run_click_sequence, 
                 args=(x, y, clicks, delay), 
