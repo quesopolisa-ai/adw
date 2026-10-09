@@ -23,7 +23,6 @@ class ClickerGUI:
         self.setup_ui()
 
     def setup_ui(self):
-        # Main Layout Frame
         frame = ttk.Frame(self.root, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
 
@@ -41,24 +40,36 @@ class ClickerGUI:
         self.status_label = ttk.Label(frame, text="Status: Stopped", foreground="red", font=("Helvetica", 10, "bold"))
         self.status_label.grid(row=2, column=0, columnspan=2, pady=15)
 
-        # Start / Stop Button (FIXED LINE BELOW)
+        # Start / Stop Button
         self.toggle_btn = ttk.Button(frame, text="Start Macro", command=self.toggle_macro)
         self.toggle_btn.grid(row=3, column=0, columnspan=2, sticky="ew")
+
+    def run_click_sequence(self, target_x, target_y, clicks, delay):
+        """Executes clicks on an isolated thread to prevent mouse twitching/freezing."""
+        try:
+            for _ in range(clicks):
+                # Lock cursor position to where you originally clicked
+                self.mouse.position = (target_x, target_y)
+                self.mouse.click(Button.right, 1)
+                time.sleep(delay)
+        finally:
+            self.is_clicking = False
 
     def on_click(self, x, y, button, pressed):
         if self.macro_running and pressed and button == Button.right:
             if self.is_clicking:
-                return
+                return  # Skip if a sequence is already executing
             
             self.is_clicking = True
             clicks = self.num_clicks_var.get()
             delay = self.delay_var.get()
 
-            for _ in range(clicks):
-                self.mouse.click(Button.right, 1)
-                time.sleep(delay)
-                
-            self.is_clicking = False
+            # Start click chain in a new thread so the main listener loop never freezes
+            threading.Thread(
+                target=self.run_click_sequence, 
+                args=(x, y, clicks, delay), 
+                daemon=True
+            ).start()
 
     def toggle_macro(self):
         if not self.macro_running:
